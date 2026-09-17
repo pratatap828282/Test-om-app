@@ -39,50 +39,58 @@ jobs:
             "build-tools;35.0.0" \
             "build-tools;36.0.0"
 
-      - name: Extract OM Investing source
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Extract OM Investing Android source
         run: |
+          set -e
+          rm -rf _om_source
           mkdir -p _om_source
 
-          ZIP_FILE=$(find . -maxdepth 1 -type f -iname "*.zip" | head -n 1)
+          ZIP_FILE="OM_Investing_GITHUB_ANDROID_READY.zip"
 
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: OM Investing source ZIP not found."
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "ERROR: $ZIP_FILE not found."
             exit 1
           fi
 
-          echo "Using source package: $ZIP_FILE"
           unzip -q "$ZIP_FILE" -d _om_source
+
+          echo "Source extracted successfully."
 
       - name: Locate Android project
         run: |
-          GRADLEW=$(find _om_source -type f -name "gradlew" | head -n 1)
+          set -e
 
-          if [ -z "$GRADLEW" ]; then
-            echo "ERROR: Android Gradle project not found in source ZIP."
+          SETTINGS_FILE=$(find _om_source -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) | head -n 1)
+
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: Android Gradle settings file not found."
             exit 1
           fi
 
-          ANDROID_DIR=$(dirname "$GRADLEW")
-          ANDROID_DIR=$(cd "$ANDROID_DIR" && pwd)
+          ANDROID_DIR=$(dirname "$SETTINGS_FILE")
 
-          chmod +x "$ANDROID_DIR/gradlew"
-
-          echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
           echo "Android project found at: $ANDROID_DIR"
+          echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
 
       - name: Run Android tests
+        working-directory: ${{ env.ANDROID_DIR }}
         run: |
-          cd "$ANDROID_DIR"
-          ./gradlew test
+          gradle test --no-daemon --stacktrace
 
       - name: Build debug APK
+        working-directory: ${{ env.ANDROID_DIR }}
         run: |
-          cd "$ANDROID_DIR"
-          ./gradlew assembleDebug
+          gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: om-investing-debug-apk
-          path: _om_source/**/build/outputs/apk/**/*.apk
+          path: ${{ env.ANDROID_DIR }}/**/build/outputs/apk/**/*.apk
           if-no-files-found: error
+          retention-days: 14
