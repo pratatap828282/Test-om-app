@@ -39,27 +39,50 @@ jobs:
             "build-tools;35.0.0" \
             "build-tools;36.0.0"
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
-      - name: Check Android project
+      - name: Extract OM Investing source
         run: |
-          test -d android
-          echo "Android project detected."
+          mkdir -p _om_source
+
+          ZIP_FILE=$(find . -maxdepth 1 -type f -iname "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: OM Investing source ZIP not found."
+            exit 1
+          fi
+
+          echo "Using source package: $ZIP_FILE"
+          unzip -q "$ZIP_FILE" -d _om_source
+
+      - name: Locate Android project
+        run: |
+          GRADLEW=$(find _om_source -type f -name "gradlew" | head -n 1)
+
+          if [ -z "$GRADLEW" ]; then
+            echo "ERROR: Android Gradle project not found in source ZIP."
+            exit 1
+          fi
+
+          ANDROID_DIR=$(dirname "$GRADLEW")
+          ANDROID_DIR=$(cd "$ANDROID_DIR" && pwd)
+
+          chmod +x "$ANDROID_DIR/gradlew"
+
+          echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
+          echo "Android project found at: $ANDROID_DIR"
 
       - name: Run Android tests
-        working-directory: android
-        run: gradle test
+        run: |
+          cd "$ANDROID_DIR"
+          ./gradlew test
 
       - name: Build debug APK
-        working-directory: android
-        run: gradle assembleDebug
+        run: |
+          cd "$ANDROID_DIR"
+          ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: om-investing-debug-apk
-          path: android/**/build/outputs/apk/**/*.apk
+          path: _om_source/**/build/outputs/apk/**/*.apk
           if-no-files-found: error
